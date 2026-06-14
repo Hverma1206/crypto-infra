@@ -1,0 +1,7 @@
+flask
+flask-cors
+requests
+python-whois
+anthropic
+python-dotenv
+beautifulsoup4
