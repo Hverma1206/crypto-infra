@@ -2,6 +2,6 @@ flask
 flask-cors
 requests
 python-whois
-anthropic
+google-genai
 python-dotenv
 beautifulsoup4

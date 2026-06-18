@@ -1,6 +1,12 @@
-import requests
+from __future__ import annotations
+
 import json
+import logging
 from datetime import datetime
+
+import requests
+
+logger = logging.getLogger("crtsh")
 
 
 def get_certificates(domain: str) -> list:
@@ -34,13 +40,13 @@ def get_certificates(domain: str) -> list:
         return certs
 
     except requests.exceptions.Timeout:
-        print(f"[crtsh] Timeout querying {domain}")
+        logger.warning("Timeout querying %s", domain)
         return []
     except requests.exceptions.RequestException as e:
-        print(f"[crtsh] Request error: {e}")
+        logger.warning("Request error: %s", e)
         return []
     except json.JSONDecodeError:
-        print(f"[crtsh] Could not parse response for {domain}")
+        logger.warning("Could not parse response for %s", domain)
         return []
 
 
@@ -154,7 +160,7 @@ def analyze_domain(domain: str) -> dict:
       - earliest_date    : when the first cert was issued (operation start date)
       - raw_certs        : first 20 raw cert records (for detailed view if needed)
     """
-    print(f"[crtsh] Analyzing domain: {domain}")
+    logger.info("Analyzing domain: %s", domain)
 
     certs = get_certificates(domain)
 

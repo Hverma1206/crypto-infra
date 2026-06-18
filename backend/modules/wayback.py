@@ -1,7 +1,12 @@
+from __future__ import annotations
+
+import logging
 from datetime import datetime
 from urllib.parse import urlparse
 
 import requests
+
+logger = logging.getLogger("wayback")
 
 
 AVAILABLE_URL = "https://archive.org/wayback/available"

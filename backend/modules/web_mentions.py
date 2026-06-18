@@ -1,9 +1,14 @@
+from __future__ import annotations
+
+import logging
 import os
 from base64 import b64encode
 from urllib.parse import quote_plus
 
 import requests
 from dotenv import load_dotenv
+
+logger = logging.getLogger("web_mentions")
 
 
 load_dotenv()

@@ -1,11 +1,18 @@
-import requests
+import logging
 import os
+
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()
 
+logger = logging.getLogger("etherscan")
+
 API_KEY = os.getenv("ETHERSCAN_KEY")
-BASE_URL ="https://api.etherscan.io/v2/api"
+BASE_URL = "https://api.etherscan.io/v2/api"
+
+if not API_KEY:
+    logger.warning("ETHERSCAN_KEY is not set — wallet analysis will return empty results")
 
 
 def _get(params: dict) -> dict:
@@ -20,10 +27,10 @@ def _get(params: dict) -> dict:
         response.raise_for_status()
         return response.json()
     except requests.exceptions.Timeout:
-        print("[etherscan] Request timed out.")
+        logger.warning("Request timed out")
         return {}
     except requests.exceptions.RequestException as e:
-        print(f"[etherscan] Request failed: {e}")
+        logger.warning("Request failed: %s", e)
         return {}
 
 
@@ -54,8 +61,7 @@ def get_transactions(address: str, limit: int = 20) -> list:
     if data.get("status") == "1":
         return data.get("result", [])
     else:
-        print("[etherscan] Full API response:")
-        print(data)
+        logger.info("No transactions returned for %s: %s", address, data.get("message", "unknown"))
         return []
 
 
@@ -215,7 +221,7 @@ def analyze_wallet(address: str) -> dict:
       - connected      : list of unique addresses this wallet interacted with
                          (used to build graph edges in graph_builder.py)
     """
-    print(f"[etherscan] Analyzing wallet: {address}")
+    logger.info("Analyzing wallet: %s", address)
 
     transactions = get_transactions(address, limit=50)
     contract_info = get_contract_info(address)

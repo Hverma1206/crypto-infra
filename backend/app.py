@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+import json
+import logging
 import os
 import re
 from urllib.parse import urlparse
@@ -18,10 +22,51 @@ from modules.whois_lookup import analyze_domain_whois
 
 load_dotenv()
 
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, log_level, logging.INFO),
+    format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("app")
+
+# ---------------------------------------------------------------------------
+# Flask application
+# ---------------------------------------------------------------------------
 app = Flask(__name__)
-CORS(app)
+
+# CORS — restrict origins in production via env var
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "*")
+CORS(app, origins=allowed_origins.split(","))
+
+MAX_INPUT_LENGTH = 256
 
 
+# ---------------------------------------------------------------------------
+# Global error handler — always return JSON, never raw HTML stack traces
+# ---------------------------------------------------------------------------
+@app.errorhandler(Exception)
+def handle_exception(exc):
+    logger.exception("Unhandled exception during request")
+    return jsonify({"error": "Internal server error"}), 500
+
+
+@app.errorhandler(404)
+def handle_404(_exc):
+    return jsonify({"error": "Not found"}), 404
+
+
+@app.errorhandler(405)
+def handle_405(_exc):
+    return jsonify({"error": "Method not allowed"}), 405
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 @app.get("/health")
 def health():
     return jsonify({"ok": True})
@@ -41,9 +86,15 @@ def analyze():
     if not input_value:
         return jsonify({"error": "input is required"}), 400
 
+    if len(input_value) > MAX_INPUT_LENGTH or len(domain) > MAX_INPUT_LENGTH:
+        return jsonify({"error": f"Input must be under {MAX_INPUT_LENGTH} characters"}), 400
+
+    logger.info("Analyze request — input=%s  domain=%s", input_value, domain or "(none)")
+
     cache_key = f"{input_value}|{domain}"
     cached = cache.get("analysis", cache_key)
     if cached:
+        logger.info("Returning cached result for %s", input_value)
         return jsonify(cached)
 
     input_type = detect_input_type(input_value)
@@ -98,6 +149,9 @@ def analyze():
     }
 
     cache.set("analysis", cache_key, result)
+    logger.info("Analysis complete — nodes=%d  edges=%d  risk=%s",
+                len(result.get("nodes", [])), len(result.get("edges", [])),
+                result.get("risk", {}).get("level", "UNKNOWN"))
     return jsonify(result)
 
 
@@ -108,14 +162,47 @@ def report():
     findings = analysis.get("findings") or []
     risk = analysis.get("risk") or {}
     summary = analysis.get("summary") or {}
+    gemini_narrative = build_gemini_narrative(analysis, findings, risk, summary)
 
     text = {
         "title": "Investigation Summary",
         "risk_level": risk.get("level", "UNKNOWN"),
         "risk_score": risk.get("score", 0),
-        "narrative": build_local_narrative(analysis, findings, risk, summary),
+        "narrative": gemini_narrative or build_local_narrative(analysis, findings, risk, summary),
+        "provider": "gemini" if gemini_narrative else "local",
     }
     return jsonify(text)
+
+
+def build_gemini_narrative(analysis: dict, findings: list, risk: dict, summary: dict) -> str | None:
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        return None
+
+    try:
+        from google import genai
+
+        client = genai.Client(api_key=api_key)
+        model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        report_context = {
+            "input": analysis.get("input"),
+            "input_type": analysis.get("input_type"),
+            "risk": risk,
+            "summary": summary,
+            "findings": findings[:10],
+        }
+        prompt = (
+            "Write one concise OSINT investigation narrative paragraph for a crypto scam "
+            "infrastructure report. Use only the provided JSON facts, avoid speculation, "
+            "and do not use markdown.\n\n"
+            f"{json.dumps(report_context, default=str)}"
+        )
+        response = client.models.generate_content(model=model, contents=prompt)
+        narrative = getattr(response, "text", None)
+        return narrative.strip() if narrative else None
+    except Exception as exc:
+        logger.warning("Gemini report generation failed: %s", exc)
+        return None
 
 
 def build_local_narrative(analysis: dict, findings: list, risk: dict, summary: dict) -> str:
@@ -132,7 +219,17 @@ def build_local_narrative(analysis: dict, findings: list, risk: dict, summary: d
 
 
 def detect_input_type(value: str) -> str:
+    # Ethereum: 0x + 40 hex chars
     if re.fullmatch(r"0x[a-fA-F0-9]{40}", value):
+        return "wallet"
+    # Bitcoin Bech32 / Bech32m: bc1 followed by 25-87 alphanumeric chars
+    if re.fullmatch(r"bc1[a-zA-HJ-NP-Za-km-z0-9]{25,87}", value):
+        return "wallet"
+    # Bitcoin legacy (P2PKH): starts with 1, 25-34 chars base58
+    if re.fullmatch(r"1[a-km-zA-HJ-NP-Z1-9]{24,33}", value):
+        return "wallet"
+    # Bitcoin P2SH: starts with 3, 25-34 chars base58
+    if re.fullmatch(r"3[a-km-zA-HJ-NP-Z1-9]{24,33}", value):
         return "wallet"
     return "domain"
 
@@ -144,4 +241,6 @@ def normalize_domain(value: str) -> str:
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    debug = os.getenv("FLASK_DEBUG", "false").lower() in ("true", "1", "yes")
+    logger.info("Starting server on port %d (debug=%s)", port, debug)
+    app.run(host="0.0.0.0", port=port, debug=debug)

@@ -1,5 +1,11 @@
-import whois
+from __future__ import annotations
+
+import logging
 from datetime import datetime, timezone
+
+import whois
+
+logger = logging.getLogger("whois")
 
 
 def _normalize_date(date_val) -> str | None:
@@ -68,7 +74,7 @@ def get_whois(domain: str) -> dict:
       - country         : registrant country if available
       - raw_text        : raw WHOIS text for reference
     """
-    print(f"[whois] Looking up: {domain}")
+    logger.info("Looking up: %s", domain)
 
     try:
         w = whois.whois(domain)
@@ -86,20 +92,13 @@ def get_whois(domain: str) -> dict:
             "error": None,
         }
 
-    except whois.parser.PywhoisError:
-        return {
-            "domain": domain,
-            "registrar": None,
-            "creation_date": None,
-            "expiry_date": None,
-            "updated_date": None,
-            "emails": [],
-            "name_servers": [],
-            "country": None,
-            "org": None,
-            "error": "Domain not found in WHOIS — may be unregistered or privacy-protected",
-        }
     except Exception as e:
+        error_name = type(e).__name__
+        if "pywhois" in error_name.lower() or "whois" in error_name.lower():
+            msg = "Domain not found in WHOIS — may be unregistered or privacy-protected"
+        else:
+            msg = f"WHOIS lookup failed: {e}"
+        logger.warning("WHOIS error for %s: %s", domain, e)
         return {
             "domain": domain,
             "registrar": None,
@@ -110,8 +109,9 @@ def get_whois(domain: str) -> dict:
             "name_servers": [],
             "country": None,
             "org": None,
-            "error": f"WHOIS lookup failed: {str(e)}",
+            "error": msg,
         }
+
 
 
 def compute_domain_age_days(creation_date_str: str | None) -> int | None:

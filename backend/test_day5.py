@@ -18,4 +18,3 @@ if __name__ == "__main__":
     test_scamdb()
     test_web_mentions()
     print("Day 5 PASS")
- vite@latest

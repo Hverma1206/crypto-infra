@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import cytoscape from 'cytoscape'
 import {
   AlertTriangle,
   Binary,
   CircleDollarSign,
+  Copy,
   Database,
   FileText,
   GitBranch,
@@ -12,15 +13,20 @@ import {
   Network,
   Search,
   ShieldAlert,
+  X,
 } from 'lucide-react'
 import './App.css'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000'
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8001'
 
-const sampleInputs = ['github.com', 'binance.com', '0xde0B295669a9FD93d5F28D9Ec85E40f4cb697BAe']
+const sampleInputs = [
+  { label: 'example.com', icon: 'domain' },
+  { label: 'binance.com', icon: 'domain' },
+  { label: '0xde0B295669a9FD93d5F28D9Ec85E40f4cb697BAe', icon: 'wallet' },
+]
 
 function App() {
-  const [input, setInput] = useState(sampleInputs[0])
+  const [input, setInput] = useState('')
   const [domain, setDomain] = useState('')
   const [analysis, setAnalysis] = useState(null)
   const [report, setReport] = useState(null)
@@ -83,8 +89,8 @@ function App() {
           <h1>Crypto Scam Infrastructure Mapper</h1>
         </div>
         <div className="status-pill">
-          <Database size={16} />
-          Public sources
+          <Database size={14} />
+          Public sources only
         </div>
       </section>
 
@@ -93,36 +99,37 @@ function App() {
           <form onSubmit={runAnalysis} className="search-panel">
             <label htmlFor="artifact">Artifact</label>
             <div className="input-row">
-              <Search size={18} />
+              <Search size={16} />
               <input
                 id="artifact"
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
-                placeholder="Wallet or domain"
+                placeholder="Enter wallet address or domain…"
               />
             </div>
 
             <label htmlFor="domain">Linked domain</label>
             <div className="input-row">
-              <Globe size={18} />
+              <Globe size={16} />
               <input
                 id="domain"
                 value={domain}
                 onChange={(event) => setDomain(event.target.value)}
-                placeholder="Optional for wallet cases"
+                placeholder="Optional — for wallet cases"
               />
             </div>
 
             <button className="primary-button" type="submit" disabled={loading || !input.trim()}>
-              {loading ? <Loader2 className="spin" size={18} /> : <Network size={18} />}
-              Analyze
+              {loading ? <Loader2 className="spin" size={16} /> : <Network size={16} />}
+              {loading ? 'Scanning…' : 'Analyze'}
             </button>
           </form>
 
           <div className="sample-strip">
             {sampleInputs.map((item) => (
-              <button key={item} type="button" onClick={() => setInput(item)} title={item}>
-                {item.startsWith('0x') ? <Binary size={16} /> : <Globe size={16} />}
+              <button key={item.label} type="button" onClick={() => setInput(item.label)} title={item.label}>
+                {item.icon === 'wallet' ? <Binary size={14} /> : <Globe size={14} />}
+                {item.label.startsWith('0x') ? `${item.label.slice(0, 8)}…` : item.label}
               </button>
             ))}
           </div>
@@ -134,7 +141,7 @@ function App() {
         <section className="main-panel">
           {error && (
             <div className="error-banner">
-              <AlertTriangle size={18} />
+              <AlertTriangle size={16} />
               {error}
             </div>
           )}
@@ -159,12 +166,20 @@ function App() {
   )
 }
 
+/* ================================================================== */
+/* Graph Visualization                                                 */
+/* ================================================================== */
 function GraphView({ analysis, loading }) {
   const containerRef = useRef(null)
+  const cyRef = useRef(null)
   const graphData = useMemo(() => toCytoscapeElements(analysis), [analysis])
+  const [selectedNode, setSelectedNode] = useState(null)
 
   useEffect(() => {
-    if (!containerRef.current || !graphData.length) return undefined
+    if (!containerRef.current || !graphData.length) {
+      setSelectedNode(null)
+      return undefined
+    }
 
     const cy = cytoscape({
       container: containerRef.current,
@@ -175,30 +190,43 @@ function GraphView({ analysis, loading }) {
           style: {
             label: 'data(label)',
             'background-color': 'data(color)',
-            color: '#172033',
-            width: 46,
-            height: 46,
-            'font-size': 11,
+            color: '#cbd5e1',
+            width: 42,
+            height: 42,
+            'font-size': 10,
+            'font-weight': 600,
             'text-wrap': 'wrap',
-            'text-max-width': 96,
+            'text-max-width': 100,
             'text-valign': 'bottom',
             'text-margin-y': 8,
             'border-width': 2,
-            'border-color': '#ffffff',
+            'border-color': 'rgba(255,255,255,0.15)',
+            'overlay-opacity': 0,
+            'transition-property': 'border-color, border-width, width, height',
+            'transition-duration': '0.2s',
+          },
+        },
+        {
+          selector: 'node:active, node:selected',
+          style: {
+            'border-color': '#06b6d4',
+            'border-width': 3,
+            width: 50,
+            height: 50,
           },
         },
         {
           selector: 'edge',
           style: {
             label: 'data(label)',
-            width: 2,
-            'line-color': '#99a3b3',
-            'target-arrow-color': '#99a3b3',
+            width: 1.5,
+            'line-color': 'rgba(100, 116, 139, 0.4)',
+            'target-arrow-color': 'rgba(100, 116, 139, 0.5)',
             'target-arrow-shape': 'triangle',
             'curve-style': 'bezier',
-            color: '#657084',
-            'font-size': 9,
-            'text-background-color': '#f8fafc',
+            color: '#64748b',
+            'font-size': 8,
+            'text-background-color': '#111827',
             'text-background-opacity': 0.85,
             'text-background-padding': 2,
           },
@@ -213,14 +241,42 @@ function GraphView({ analysis, loading }) {
       },
     })
 
+    cyRef.current = cy
+
+    // Node tap handler — show details
+    cy.on('tap', 'node', (evt) => {
+      const node = evt.target
+      setSelectedNode({
+        id: node.id(),
+        label: node.data('label'),
+        type: node.data('type') || 'unknown',
+        color: node.data('color'),
+      })
+    })
+
+    // Tap on background to deselect
+    cy.on('tap', (evt) => {
+      if (evt.target === cy) {
+        setSelectedNode(null)
+      }
+    })
+
     cy.fit(undefined, 28)
-    return () => cy.destroy()
+    return () => {
+      cy.destroy()
+      cyRef.current = null
+    }
   }, [graphData])
 
   if (loading) {
     return (
       <div className="graph-empty">
-        <Loader2 className="spin" size={36} />
+        <div className="scanning-indicator">
+          <div className="scan-bars">
+            <span /><span /><span /><span /><span />
+          </div>
+          <p>Scanning infrastructure…</p>
+        </div>
       </div>
     )
   }
@@ -228,21 +284,43 @@ function GraphView({ analysis, loading }) {
   if (!analysis) {
     return (
       <div className="graph-empty">
-        <GitBranch size={40} />
+        <div className="graph-empty-content">
+          <GitBranch size={36} />
+          <p>Enter a wallet address or domain above to begin infrastructure mapping</p>
+        </div>
       </div>
     )
   }
 
-  return <div className="graph-canvas" ref={containerRef} />
+  return (
+    <>
+      <div className="graph-canvas" ref={containerRef} />
+      {selectedNode && (
+        <div className="node-detail fade-in">
+          <div className="node-detail-dot" style={{ background: selectedNode.color }} />
+          <div className="node-detail-info">
+            <div className="node-detail-label">{selectedNode.label}</div>
+            <div className="node-detail-type">{selectedNode.type.replace(/_/g, ' ')}</div>
+          </div>
+          <button className="node-detail-close" onClick={() => setSelectedNode(null)} aria-label="Close">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+    </>
+  )
 }
 
+/* ================================================================== */
+/* Side Panels                                                         */
+/* ================================================================== */
 function RiskPanel({ analysis }) {
   const risk = analysis?.risk || { score: 0, level: 'READY', reasons: [] }
   return (
     <section className={`panel risk-panel ${risk.level.toLowerCase()}`}>
       <div className="panel-title">
-        <ShieldAlert size={18} />
-        Risk
+        <ShieldAlert size={16} />
+        Risk Assessment
       </div>
       <div className="risk-score">{risk.score}</div>
       <div className="risk-level">{risk.level}</div>
@@ -261,10 +339,10 @@ function SummaryPanel({ analysis }) {
 
   return (
     <section className="panel metric-list">
-      <Metric icon={<CircleDollarSign size={18} />} label="ETH received" value={wallet.impact?.total_eth_received ?? '0'} />
-      <Metric icon={<Network size={18} />} label="Wallet links" value={wallet.connected_wallets ?? '0'} />
-      <Metric icon={<Globe size={18} />} label="Sibling domains" value={domain.sibling_domains ?? '0'} />
-      <Metric icon={<Database size={18} />} label="ScamDB hits" value={scamdb.confirmed ?? '0'} />
+      <Metric icon={<CircleDollarSign size={16} />} label="ETH received" value={wallet.impact?.total_eth_received ?? '—'} />
+      <Metric icon={<Network size={16} />} label="Wallet links" value={wallet.connected_wallets ?? '—'} />
+      <Metric icon={<Globe size={16} />} label="Sibling domains" value={domain.sibling_domains ?? '—'} />
+      <Metric icon={<Database size={16} />} label="ScamDB hits" value={scamdb.confirmed ?? '—'} />
     </section>
   )
 }
@@ -279,12 +357,15 @@ function Metric({ icon, label, value }) {
   )
 }
 
+/* ================================================================== */
+/* Lower Panels                                                        */
+/* ================================================================== */
 function FindingsPanel({ analysis }) {
   const findings = analysis?.findings || []
   return (
-    <section className="panel evidence-card">
+    <section className="panel evidence-card fade-in">
       <div className="panel-title">
-        <AlertTriangle size={18} />
+        <AlertTriangle size={16} />
         Findings
       </div>
       {findings.length ? (
@@ -294,7 +375,7 @@ function FindingsPanel({ analysis }) {
           ))}
         </ul>
       ) : (
-        <p className="muted">No findings yet</p>
+        <p className="muted">No findings yet — run an analysis to begin</p>
       )}
     </section>
   )
@@ -309,9 +390,9 @@ function EvidencePanel({ analysis }) {
   }, {})
 
   return (
-    <section className="panel evidence-card">
+    <section className="panel evidence-card fade-in">
       <div className="panel-title">
-        <GitBranch size={18} />
+        <GitBranch size={16} />
         Evidence
       </div>
       <div className="evidence-grid">
@@ -323,7 +404,7 @@ function EvidencePanel({ analysis }) {
       <div className="type-list">
         {Object.entries(grouped).map(([type, count]) => (
           <span key={type}>
-            {type.replace('_', ' ')} <b>{count}</b>
+            {type.replace(/_/g, ' ')} <b>{count}</b>
           </span>
         ))}
       </div>
@@ -332,21 +413,44 @@ function EvidencePanel({ analysis }) {
 }
 
 function ReportPanel({ analysis, report, loading, onGenerate }) {
+  const handleCopy = useCallback(() => {
+    if (report?.narrative) {
+      navigator.clipboard.writeText(report.narrative).catch(() => {})
+    }
+  }, [report])
+
   return (
-    <section className="panel report-card">
+    <section className="panel report-card fade-in">
       <div className="panel-title">
-        <FileText size={18} />
+        <FileText size={16} />
         Report
       </div>
-      <button className="secondary-button" type="button" onClick={onGenerate} disabled={!analysis || loading}>
-        {loading ? <Loader2 className="spin" size={16} /> : <FileText size={16} />}
-        Generate
-      </button>
-      <p>{report?.narrative || 'No report generated'}</p>
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <button className="secondary-button" type="button" onClick={onGenerate} disabled={!analysis || loading}>
+          {loading ? <Loader2 className="spin" size={14} /> : <FileText size={14} />}
+          Generate
+        </button>
+        {report?.narrative && (
+          <button className="secondary-button" type="button" onClick={handleCopy} title="Copy to clipboard">
+            <Copy size={14} />
+          </button>
+        )}
+      </div>
+      {report ? (
+        <>
+          <p className="report-narrative">{report.narrative}</p>
+          <span className="report-provider">{report.provider === 'gemini' ? '✦ Gemini AI' : 'Local'}</span>
+        </>
+      ) : (
+        <p className="muted">Generate an investigation summary report</p>
+      )}
     </section>
   )
 }
 
+/* ================================================================== */
+/* Graph Data Helpers                                                  */
+/* ================================================================== */
 function toCytoscapeElements(analysis) {
   if (!analysis) return []
   const nodes = (analysis.nodes || []).map((node) => ({
@@ -354,6 +458,7 @@ function toCytoscapeElements(analysis) {
       id: node.id,
       label: node.label,
       color: colorForType(node.type),
+      type: node.type,
     },
   }))
   const edges = (analysis.edges || []).map((edge) => ({
