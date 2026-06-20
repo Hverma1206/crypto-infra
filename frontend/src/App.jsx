@@ -1,31 +1,34 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import cytoscape from 'cytoscape'
-import {
-  AlertTriangle,
-  Binary,
-  CircleDollarSign,
-  Copy,
-  Database,
-  FileText,
-  GitBranch,
-  Globe,
-  Loader2,
-  Network,
-  Search,
-  ShieldAlert,
-  X,
-} from 'lucide-react'
 import './App.css'
+
+function useTheme() {
+  const [theme, setTheme] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('theme') || 'light'
+    }
+    return 'light'
+  })
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('theme', theme)
+  }, [theme])
+
+  const toggle = useCallback(() => {
+    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))
+  }, [])
+
+  return { theme, toggle }
+}
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8001'
 
 const sampleInputs = [
-  { label: 'example.com', icon: 'domain' },
-  { label: 'binance.com', icon: 'domain' },
-  { label: '0xde0B295669a9FD93d5F28D9Ec85E40f4cb697BAe', icon: 'wallet' },
 ]
 
 function App() {
+  const { theme, toggle: toggleTheme } = useTheme()
   const [input, setInput] = useState('')
   const [domain, setDomain] = useState('')
   const [analysis, setAnalysis] = useState(null)
@@ -81,98 +84,143 @@ function App() {
     }
   }
 
+  const risk = analysis?.risk || { score: 0, level: 'READY', reasons: [] }
+  const summary = analysis?.summary || {}
+  const wallet = summary.wallet || {}
+  const domainInfo = summary.domain || {}
+  const scamdb = summary.scamdb || {}
+
   return (
-    <main className="app-shell">
-      <section className="topbar">
-        <div>
-          <p className="eyebrow">OSINT investigation workspace</p>
+    <main className="app">
+      <header className="header">
+        <div className="header-text">
           <h1>Crypto Scam Infrastructure Mapper</h1>
+          <p>Investigate wallet addresses and domains using public OSINT sources.</p>
         </div>
-        <div className="status-pill">
-          <Database size={14} />
-          Public sources only
+        <div className="theme-toggle">
+          <button
+            className="theme-toggle-track"
+            onClick={toggleTheme}
+            aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+            title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+          >
+            <span className="theme-toggle-knob">
+              <span className="theme-toggle-icon">{theme === 'light' ? '☀️' : '🌙'}</span>
+            </span>
+          </button>
         </div>
-      </section>
+      </header>
 
-      <section className="workspace">
-        <aside className="control-panel">
-          <form onSubmit={runAnalysis} className="search-panel">
-            <label htmlFor="artifact">Artifact</label>
-            <div className="input-row">
-              <Search size={16} />
-              <input
-                id="artifact"
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                placeholder="Enter wallet address or domain…"
-              />
-            </div>
+      <form onSubmit={runAnalysis} className="search-form">
+        <div className="field">
+          <label htmlFor="artifact">Wallet or domain</label>
+          <input
+            id="artifact"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Enter wallet address or domain"
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="domain">Linked domain (optional)</label>
+          <input
+            id="domain"
+            value={domain}
+            onChange={(e) => setDomain(e.target.value)}
+            placeholder="For wallet lookups"
+          />
+        </div>
+        <button className="btn btn-primary" type="submit" disabled={loading || !input.trim()}>
+          {loading ? 'Scanning...' : 'Analyze'}
+        </button>
+      </form>
 
-            <label htmlFor="domain">Linked domain</label>
-            <div className="input-row">
-              <Globe size={16} />
-              <input
-                id="domain"
-                value={domain}
-                onChange={(event) => setDomain(event.target.value)}
-                placeholder="Optional — for wallet cases"
-              />
-            </div>
+      <div className="quick-fill">
+        {sampleInputs.map((item) => (
+          <button key={item} type="button" onClick={() => setInput(item)}>
+            {item.startsWith('0x') ? `${item.slice(0, 10)}...` : item}
+          </button>
+        ))}
+      </div>
 
-            <button className="primary-button" type="submit" disabled={loading || !input.trim()}>
-              {loading ? <Loader2 className="spin" size={16} /> : <Network size={16} />}
-              {loading ? 'Scanning…' : 'Analyze'}
-            </button>
-          </form>
+      {error && <div className="error">{error}</div>}
 
-          <div className="sample-strip">
-            {sampleInputs.map((item) => (
-              <button key={item.label} type="button" onClick={() => setInput(item.label)} title={item.label}>
-                {item.icon === 'wallet' ? <Binary size={14} /> : <Globe size={14} />}
-                {item.label.startsWith('0x') ? `${item.label.slice(0, 8)}…` : item.label}
-              </button>
-            ))}
-          </div>
+      <div className="stats-row">
+        <div className="stat">
+          <span className="stat-value">{risk.score}</span>
+          <span className="stat-label">Risk score</span>
+          <span className={`stat-risk risk-${risk.level.toLowerCase()}`}>{risk.level}</span>
+        </div>
+        <div className="stat">
+          <span className="stat-value">{wallet.impact?.total_eth_received ?? '—'}</span>
+          <span className="stat-label">ETH received</span>
+        </div>
+        <div className="stat">
+          <span className="stat-value">{wallet.connected_wallets ?? '—'}</span>
+          <span className="stat-label">Wallet links</span>
+        </div>
+        <div className="stat">
+          <span className="stat-value">{domainInfo.sibling_domains ?? '—'}</span>
+          <span className="stat-label">Sibling domains</span>
+        </div>
+        <div className="stat">
+          <span className="stat-value">{scamdb.confirmed ?? '—'}</span>
+          <span className="stat-label">ScamDB hits</span>
+        </div>
+      </div>
 
-          <RiskPanel analysis={analysis} />
-          <SummaryPanel analysis={analysis} />
-        </aside>
+      <div className="graph-section">
+        <h2>Infrastructure graph</h2>
+        <div className="graph-container">
+          <GraphView analysis={analysis} loading={loading} theme={theme} />
+        </div>
+      </div>
 
-        <section className="main-panel">
-          {error && (
-            <div className="error-banner">
-              <AlertTriangle size={16} />
-              {error}
-            </div>
-          )}
-
-          <div className="graph-band">
-            <GraphView analysis={analysis} loading={loading} />
-          </div>
-
-          <div className="lower-grid">
-            <FindingsPanel analysis={analysis} />
-            <EvidencePanel analysis={analysis} />
-            <ReportPanel
-              analysis={analysis}
-              report={report}
-              loading={reportLoading}
-              onGenerate={generateReport}
-            />
-          </div>
-        </section>
-      </section>
+      <div className="bottom-grid">
+        <FindingsCard analysis={analysis} />
+        <EvidenceCard analysis={analysis} />
+        <ReportCard
+          analysis={analysis}
+          report={report}
+          loading={reportLoading}
+          onGenerate={generateReport}
+        />
+      </div>
     </main>
   )
 }
 
-/* ================================================================== */
-/* Graph Visualization                                                 */
-/* ================================================================== */
-function GraphView({ analysis, loading }) {
+/* ============================================================ */
+/* Graph                                                         */
+/* ============================================================ */
+function GraphView({ analysis, loading, theme }) {
   const containerRef = useRef(null)
   const cyRef = useRef(null)
   const graphData = useMemo(() => toCytoscapeElements(analysis), [analysis])
+
+  // Re-style graph when theme changes
+  useEffect(() => {
+    if (!cyRef.current) return
+    const isDark = theme === 'dark'
+    cyRef.current.style()
+      .selector('node')
+      .style({
+        color: isDark ? '#a1a1aa' : '#555',
+        'border-color': isDark ? '#3f3f46' : '#ddd',
+      })
+      .selector('node:active, node:selected')
+      .style({
+        'border-color': isDark ? '#d4d4d8' : '#333',
+      })
+      .selector('edge')
+      .style({
+        'line-color': isDark ? '#3f3f46' : '#ccc',
+        'target-arrow-color': isDark ? '#52525b' : '#bbb',
+        color: isDark ? '#71717a' : '#999',
+        'text-background-color': isDark ? '#1e2028' : '#fafafa',
+      })
+      .update()
+  }, [theme])
   const [selectedNode, setSelectedNode] = useState(null)
 
   useEffect(() => {
@@ -190,44 +238,40 @@ function GraphView({ analysis, loading }) {
           style: {
             label: 'data(label)',
             'background-color': 'data(color)',
-            color: '#cbd5e1',
-            width: 42,
-            height: 42,
+            color: '#555',
+            width: 36,
+            height: 36,
             'font-size': 10,
-            'font-weight': 600,
+            'font-weight': 500,
             'text-wrap': 'wrap',
             'text-max-width': 100,
             'text-valign': 'bottom',
-            'text-margin-y': 8,
-            'border-width': 2,
-            'border-color': 'rgba(255,255,255,0.15)',
+            'text-margin-y': 6,
+            'border-width': 1,
+            'border-color': '#ddd',
             'overlay-opacity': 0,
-            'transition-property': 'border-color, border-width, width, height',
-            'transition-duration': '0.2s',
           },
         },
         {
           selector: 'node:active, node:selected',
           style: {
-            'border-color': '#06b6d4',
-            'border-width': 3,
-            width: 50,
-            height: 50,
+            'border-color': '#333',
+            'border-width': 2,
           },
         },
         {
           selector: 'edge',
           style: {
             label: 'data(label)',
-            width: 1.5,
-            'line-color': 'rgba(100, 116, 139, 0.4)',
-            'target-arrow-color': 'rgba(100, 116, 139, 0.5)',
+            width: 1,
+            'line-color': '#ccc',
+            'target-arrow-color': '#bbb',
             'target-arrow-shape': 'triangle',
             'curve-style': 'bezier',
-            color: '#64748b',
+            color: '#999',
             'font-size': 8,
-            'text-background-color': '#111827',
-            'text-background-opacity': 0.85,
+            'text-background-color': '#fafafa',
+            'text-background-opacity': 0.9,
             'text-background-padding': 2,
           },
         },
@@ -235,7 +279,7 @@ function GraphView({ analysis, loading }) {
       layout: {
         name: 'cose',
         animate: false,
-        padding: 38,
+        padding: 30,
         nodeRepulsion: 9000,
         idealEdgeLength: 120,
       },
@@ -243,7 +287,6 @@ function GraphView({ analysis, loading }) {
 
     cyRef.current = cy
 
-    // Node tap handler — show details
     cy.on('tap', 'node', (evt) => {
       const node = evt.target
       setSelectedNode({
@@ -254,14 +297,11 @@ function GraphView({ analysis, loading }) {
       })
     })
 
-    // Tap on background to deselect
     cy.on('tap', (evt) => {
-      if (evt.target === cy) {
-        setSelectedNode(null)
-      }
+      if (evt.target === cy) setSelectedNode(null)
     })
 
-    cy.fit(undefined, 28)
+    cy.fit(undefined, 20)
     return () => {
       cy.destroy()
       cyRef.current = null
@@ -269,119 +309,55 @@ function GraphView({ analysis, loading }) {
   }, [graphData])
 
   if (loading) {
-    return (
-      <div className="graph-empty">
-        <div className="scanning-indicator">
-          <div className="scan-bars">
-            <span /><span /><span /><span /><span />
-          </div>
-          <p>Scanning infrastructure…</p>
-        </div>
-      </div>
-    )
+    return <div className="graph-placeholder"><span className="loading-text">Scanning infrastructure...</span></div>
   }
 
   if (!analysis) {
-    return (
-      <div className="graph-empty">
-        <div className="graph-empty-content">
-          <GitBranch size={36} />
-          <p>Enter a wallet address or domain above to begin infrastructure mapping</p>
-        </div>
-      </div>
-    )
+    return <div className="graph-placeholder">Enter a wallet or domain above to map infrastructure</div>
   }
 
   return (
     <>
       <div className="graph-canvas" ref={containerRef} />
       {selectedNode && (
-        <div className="node-detail fade-in">
-          <div className="node-detail-dot" style={{ background: selectedNode.color }} />
-          <div className="node-detail-info">
-            <div className="node-detail-label">{selectedNode.label}</div>
-            <div className="node-detail-type">{selectedNode.type.replace(/_/g, ' ')}</div>
+        <div className="node-detail">
+          <div className="node-dot" style={{ background: selectedNode.color }} />
+          <div className="node-info">
+            <div className="node-label">{selectedNode.label}</div>
+            <div className="node-type">{selectedNode.type.replace(/_/g, ' ')}</div>
           </div>
-          <button className="node-detail-close" onClick={() => setSelectedNode(null)} aria-label="Close">
-            <X size={16} />
-          </button>
+          <button className="node-close" onClick={() => setSelectedNode(null)} aria-label="Close">×</button>
         </div>
       )}
     </>
   )
 }
 
-/* ================================================================== */
-/* Side Panels                                                         */
-/* ================================================================== */
-function RiskPanel({ analysis }) {
-  const risk = analysis?.risk || { score: 0, level: 'READY', reasons: [] }
+/* ============================================================ */
+/* Findings                                                      */
+/* ============================================================ */
+function FindingsCard({ analysis }) {
+  const findings = analysis?.findings || []
   return (
-    <section className={`panel risk-panel ${risk.level.toLowerCase()}`}>
-      <div className="panel-title">
-        <ShieldAlert size={16} />
-        Risk Assessment
-      </div>
-      <div className="risk-score">{risk.score}</div>
-      <div className="risk-level">{risk.level}</div>
-      <div className="meter">
-        <span style={{ width: `${Math.min(risk.score || 0, 100)}%` }} />
-      </div>
-    </section>
-  )
-}
-
-function SummaryPanel({ analysis }) {
-  const summary = analysis?.summary || {}
-  const wallet = summary.wallet || {}
-  const domain = summary.domain || {}
-  const scamdb = summary.scamdb || {}
-
-  return (
-    <section className="panel metric-list">
-      <Metric icon={<CircleDollarSign size={16} />} label="ETH received" value={wallet.impact?.total_eth_received ?? '—'} />
-      <Metric icon={<Network size={16} />} label="Wallet links" value={wallet.connected_wallets ?? '—'} />
-      <Metric icon={<Globe size={16} />} label="Sibling domains" value={domain.sibling_domains ?? '—'} />
-      <Metric icon={<Database size={16} />} label="ScamDB hits" value={scamdb.confirmed ?? '—'} />
-    </section>
-  )
-}
-
-function Metric({ icon, label, value }) {
-  return (
-    <div className="metric">
-      {icon}
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <div className="card">
+      <div className="card-title">Findings</div>
+      {findings.length ? (
+        <ul className="findings-list">
+          {findings.slice(0, 8).map((item, i) => (
+            <li key={`${item}-${i}`}>{item}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="muted-text">No findings yet</p>
+      )}
     </div>
   )
 }
 
-/* ================================================================== */
-/* Lower Panels                                                        */
-/* ================================================================== */
-function FindingsPanel({ analysis }) {
-  const findings = analysis?.findings || []
-  return (
-    <section className="panel evidence-card fade-in">
-      <div className="panel-title">
-        <AlertTriangle size={16} />
-        Findings
-      </div>
-      {findings.length ? (
-        <ul className="finding-list">
-          {findings.slice(0, 8).map((item, index) => (
-            <li key={`${item}-${index}`}>{item}</li>
-          ))}
-        </ul>
-      ) : (
-        <p className="muted">No findings yet — run an analysis to begin</p>
-      )}
-    </section>
-  )
-}
-
-function EvidencePanel({ analysis }) {
+/* ============================================================ */
+/* Evidence                                                      */
+/* ============================================================ */
+function EvidenceCard({ analysis }) {
   const nodes = analysis?.nodes || []
   const edges = analysis?.edges || []
   const grouped = nodes.reduce((acc, node) => {
@@ -390,29 +366,31 @@ function EvidencePanel({ analysis }) {
   }, {})
 
   return (
-    <section className="panel evidence-card fade-in">
-      <div className="panel-title">
-        <GitBranch size={16} />
-        Evidence
+    <div className="card">
+      <div className="card-title">Evidence</div>
+      <div className="evidence-counts">
+        <div>
+          <strong>{nodes.length}</strong>
+          <span>Nodes</span>
+        </div>
+        <div>
+          <strong>{edges.length}</strong>
+          <span>Edges</span>
+        </div>
       </div>
-      <div className="evidence-grid">
-        <strong>{nodes.length}</strong>
-        <span>Nodes</span>
-        <strong>{edges.length}</strong>
-        <span>Edges</span>
-      </div>
-      <div className="type-list">
+      <div className="type-tags">
         {Object.entries(grouped).map(([type, count]) => (
-          <span key={type}>
-            {type.replace(/_/g, ' ')} <b>{count}</b>
-          </span>
+          <span key={type}>{type.replace(/_/g, ' ')}<b>{count}</b></span>
         ))}
       </div>
-    </section>
+    </div>
   )
 }
 
-function ReportPanel({ analysis, report, loading, onGenerate }) {
+/* ============================================================ */
+/* Report                                                        */
+/* ============================================================ */
+function ReportCard({ analysis, report, loading, onGenerate }) {
   const handleCopy = useCallback(() => {
     if (report?.narrative) {
       navigator.clipboard.writeText(report.narrative).catch(() => {})
@@ -420,37 +398,33 @@ function ReportPanel({ analysis, report, loading, onGenerate }) {
   }, [report])
 
   return (
-    <section className="panel report-card fade-in">
-      <div className="panel-title">
-        <FileText size={16} />
-        Report
-      </div>
-      <div style={{ display: 'flex', gap: '8px' }}>
-        <button className="secondary-button" type="button" onClick={onGenerate} disabled={!analysis || loading}>
-          {loading ? <Loader2 className="spin" size={14} /> : <FileText size={14} />}
-          Generate
+    <div className="card">
+      <div className="card-title">Report</div>
+      <div className="report-actions">
+        <button className="btn btn-secondary" type="button" onClick={onGenerate} disabled={!analysis || loading}>
+          {loading ? 'Generating...' : 'Generate report'}
         </button>
         {report?.narrative && (
-          <button className="secondary-button" type="button" onClick={handleCopy} title="Copy to clipboard">
-            <Copy size={14} />
+          <button className="btn btn-secondary" type="button" onClick={handleCopy}>
+            Copy
           </button>
         )}
       </div>
       {report ? (
         <>
-          <p className="report-narrative">{report.narrative}</p>
-          <span className="report-provider">{report.provider === 'gemini' ? '✦ Gemini AI' : 'Local'}</span>
+          <p className="report-text">{report.narrative}</p>
+          <span className="report-source">{report.provider === 'gemini' ? 'Gemini' : 'Local'}</span>
         </>
       ) : (
-        <p className="muted">Generate an investigation summary report</p>
+        <p className="muted-text">Generate a summary report from analysis results</p>
       )}
-    </section>
+    </div>
   )
 }
 
-/* ================================================================== */
-/* Graph Data Helpers                                                  */
-/* ================================================================== */
+/* ============================================================ */
+/* Helpers                                                       */
+/* ============================================================ */
 function toCytoscapeElements(analysis) {
   if (!analysis) return []
   const nodes = (analysis.nodes || []).map((node) => ({
@@ -474,17 +448,17 @@ function toCytoscapeElements(analysis) {
 
 function colorForType(type) {
   const colors = {
-    wallet: '#38bdf8',
-    deployer: '#f97316',
-    domain: '#22c55e',
-    subdomain: '#84cc16',
-    sibling_domain: '#f59e0b',
-    email: '#a855f7',
-    snapshot: '#64748b',
-    scamdb_flag: '#ef4444',
-    web_mention: '#14b8a6',
+    wallet: '#5b9bd5',
+    deployer: '#e07b39',
+    domain: '#6aab73',
+    subdomain: '#8fb83a',
+    sibling_domain: '#d4a238',
+    email: '#9b72cf',
+    snapshot: '#999',
+    scamdb_flag: '#d44',
+    web_mention: '#5aada8',
   }
-  return colors[type] || '#94a3b8'
+  return colors[type] || '#aaa'
 }
 
 export default App
