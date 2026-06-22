@@ -108,9 +108,8 @@ def analyze_web_presence(wallet: str | None = None, domain: str | None = None) -
         return {"query": "", "results": [], "categories": {}, "risk_flags": []}
 
     reddit_results = search_reddit(f'"{query}" crypto scam')
-    links = build_external_search_links(query)
-    results = reddit_results + links
-    categories = classify_results(results)
+    external_links = build_external_search_links(query)
+    categories = classify_results(reddit_results)
     flags = []
 
     if reddit_results:
@@ -118,7 +117,8 @@ def analyze_web_presence(wallet: str | None = None, domain: str | None = None) -
 
     return {
         "query": query,
-        "results": results,
+        "results": reddit_results,
+        "external_links": external_links,
         "categories": categories,
         "risk_flags": flags,
     }

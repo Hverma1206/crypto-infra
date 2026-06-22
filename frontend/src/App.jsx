@@ -24,8 +24,14 @@ function useTheme() {
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8001'
 
-const sampleInputs = [
-]
+const SOURCE_LABELS = {
+  etherscan: 'Etherscan',
+  crtsh: 'crt.sh',
+  whois: 'WHOIS',
+  wayback: 'Wayback',
+  scamdb: 'ScamDB',
+  web_mentions: 'Web',
+}
 
 function App() {
   const { theme, toggle: toggleTheme } = useTheme()
@@ -35,31 +41,96 @@ function App() {
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(false)
   const [reportLoading, setReportLoading] = useState(false)
+  const [pdfLoading, setPdfLoading] = useState(false)
+  const [deepScanLoading, setDeepScanLoading] = useState(false)
   const [error, setError] = useState('')
+
+  // SSE source progress
+  const [sourceProgress, setSourceProgress] = useState({})
+  const [activeSources, setActiveSources] = useState([])
 
   async function runAnalysis(event) {
     event?.preventDefault()
     setLoading(true)
     setError('')
     setReport(null)
+    setAnalysis(null)
+    setSourceProgress({})
+    setActiveSources([])
 
     try {
-      const response = await fetch(`${API_BASE}/analyze`, {
+      const response = await fetch(`${API_BASE}/analyze/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ input, domain }),
       })
-      const data = await response.json()
+
       if (!response.ok) {
-        throw new Error(data.error || 'Analysis failed')
+        const errData = await response.json().catch(() => ({}))
+        throw new Error(errData.error || 'Analysis failed')
       }
-      setAnalysis(data)
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const event = JSON.parse(line.slice(6))
+
+            if (event.event === 'sources') {
+              setActiveSources(event.sources)
+              const initial = {}
+              event.sources.forEach((s) => {
+                initial[s] = { status: 'waiting', duration: null }
+              })
+              setSourceProgress(initial)
+            } else if (event.event === 'source_done') {
+              setSourceProgress((prev) => ({
+                ...prev,
+                [event.source]: {
+                  status: 'done',
+                  duration: event.duration,
+                  error: event.error,
+                },
+              }))
+            } else if (event.event === 'complete') {
+              setAnalysis(event.result)
+            }
+          } catch {
+            // skip unparseable lines
+          }
+        }
+      }
     } catch (err) {
       setError(err.message)
     } finally {
       setLoading(false)
     }
   }
+
+  // Mark currently-running sources as 'scanning'
+  useEffect(() => {
+    if (!loading || activeSources.length === 0) return
+    setSourceProgress((prev) => {
+      const updated = { ...prev }
+      for (const key of activeSources) {
+        if (updated[key]?.status === 'waiting') {
+          updated[key] = { ...updated[key], status: 'scanning' }
+        }
+      }
+      return updated
+    })
+  }, [loading, activeSources])
 
   async function generateReport() {
     if (!analysis) return
@@ -84,11 +155,78 @@ function App() {
     }
   }
 
+  async function downloadPdf() {
+    if (!analysis) return
+    setPdfLoading(true)
+    setError('')
+
+    try {
+      const response = await fetch(`${API_BASE}/report/pdf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          analysis,
+          narrative: report?.narrative || null,
+        }),
+      })
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}))
+        throw new Error(errData.error || 'PDF generation failed')
+      }
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `scam_report_${(analysis.input || 'unknown').slice(0, 30)}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setPdfLoading(false)
+    }
+  }
+
+  async function runDeepScan() {
+    if (!analysis) return
+    const connected = analysis.raw?.wallet?.connected_addresses || []
+    if (connected.length === 0) return
+
+    setDeepScanLoading(true)
+    setError('')
+
+    try {
+      const response = await fetch(`${API_BASE}/deep-scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          analysis,
+          addresses: connected.slice(0, 10),
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || 'Deep scan failed')
+      }
+      setAnalysis(data)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setDeepScanLoading(false)
+    }
+  }
+
   const risk = analysis?.risk || { score: 0, level: 'READY', reasons: [] }
   const summary = analysis?.summary || {}
   const wallet = summary.wallet || {}
   const domainInfo = summary.domain || {}
   const scamdb = summary.scamdb || {}
+  const classification = analysis?.classification || null
+  const deepScanData = analysis?.deep_scan || null
+  const connectedWallets = analysis?.raw?.wallet?.connected_addresses || []
 
   return (
     <main className="app">
@@ -135,14 +273,6 @@ function App() {
         </button>
       </form>
 
-      <div className="quick-fill">
-        {sampleInputs.map((item) => (
-          <button key={item} type="button" onClick={() => setInput(item)}>
-            {item.startsWith('0x') ? `${item.slice(0, 10)}...` : item}
-          </button>
-        ))}
-      </div>
-
       {error && <div className="error">{error}</div>}
 
       <div className="stats-row">
@@ -169,6 +299,31 @@ function App() {
         </div>
       </div>
 
+      {/* Deep Scan */}
+      {analysis && connectedWallets.length > 0 && (
+        <div className="deep-scan-section">
+          <button
+            className="btn-deep-scan"
+            onClick={runDeepScan}
+            disabled={deepScanLoading}
+          >
+            {deepScanLoading
+              ? '🔍 Deep scanning...'
+              : `🔍 Deep Scan (${connectedWallets.length} connected wallets)`}
+          </button>
+          {deepScanLoading && (
+            <span className="deep-scan-info">Scanning connected wallets in parallel...</span>
+          )}
+          {deepScanData && (
+            <div className="deep-scan-stats">
+              <span>Wallets scanned: <strong>{deepScanData.wallets_scanned}</strong></span>
+              <span>New nodes: <strong>{deepScanData.new_nodes}</strong></span>
+              <span>New edges: <strong>{deepScanData.new_edges}</strong></span>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="graph-section">
         <h2>Infrastructure graph</h2>
         <div className="graph-container">
@@ -183,7 +338,9 @@ function App() {
           analysis={analysis}
           report={report}
           loading={reportLoading}
+          pdfLoading={pdfLoading}
           onGenerate={generateReport}
+          onDownloadPdf={downloadPdf}
         />
       </div>
     </main>
@@ -253,6 +410,14 @@ function GraphView({ analysis, loading, theme }) {
           },
         },
         {
+          selector: 'node[?deep_scanned]',
+          style: {
+            'border-width': 2,
+            'border-color': '#667eea',
+            'border-style': 'double',
+          },
+        },
+        {
           selector: 'node:active, node:selected',
           style: {
             'border-color': '#333',
@@ -308,18 +473,30 @@ function GraphView({ analysis, loading, theme }) {
     }
   }, [graphData])
 
-  if (loading) {
-    return <div className="graph-placeholder"><span className="loading-text">Scanning infrastructure...</span></div>
-  }
-
-  if (!analysis) {
-    return <div className="graph-placeholder">Enter a wallet or domain above to map infrastructure</div>
-  }
-
   return (
-    <>
-      <div className="graph-canvas" ref={containerRef} />
-      {selectedNode && (
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      {loading && (
+        <div className="graph-placeholder">
+          <span className="loading-text">Scanning infrastructure...</span>
+        </div>
+      )}
+      
+      {!loading && !analysis && (
+        <div className="graph-placeholder">
+          Enter a wallet or domain above to map infrastructure
+        </div>
+      )}
+
+      <div 
+        className="graph-canvas" 
+        ref={containerRef} 
+        style={{ 
+          display: (!loading && analysis) ? 'block' : 'none',
+          visibility: (!loading && analysis) ? 'visible' : 'hidden'
+        }} 
+      />
+
+      {selectedNode && !loading && analysis && (
         <div className="node-detail">
           <div className="node-dot" style={{ background: selectedNode.color }} />
           <div className="node-info">
@@ -329,7 +506,7 @@ function GraphView({ analysis, loading, theme }) {
           <button className="node-close" onClick={() => setSelectedNode(null)} aria-label="Close">×</button>
         </div>
       )}
-    </>
+    </div>
   )
 }
 
@@ -343,7 +520,7 @@ function FindingsCard({ analysis }) {
       <div className="card-title">Findings</div>
       {findings.length ? (
         <ul className="findings-list">
-          {findings.slice(0, 8).map((item, i) => (
+          {findings.slice(0, 12).map((item, i) => (
             <li key={`${item}-${i}`}>{item}</li>
           ))}
         </ul>
@@ -390,7 +567,7 @@ function EvidenceCard({ analysis }) {
 /* ============================================================ */
 /* Report                                                        */
 /* ============================================================ */
-function ReportCard({ analysis, report, loading, onGenerate }) {
+function ReportCard({ analysis, report, loading, pdfLoading, onGenerate, onDownloadPdf }) {
   const handleCopy = useCallback(() => {
     if (report?.narrative) {
       navigator.clipboard.writeText(report.narrative).catch(() => {})
@@ -403,6 +580,9 @@ function ReportCard({ analysis, report, loading, onGenerate }) {
       <div className="report-actions">
         <button className="btn btn-secondary" type="button" onClick={onGenerate} disabled={!analysis || loading}>
           {loading ? 'Generating...' : 'Generate report'}
+        </button>
+        <button className="btn-pdf" type="button" onClick={onDownloadPdf} disabled={!analysis || pdfLoading}>
+          {pdfLoading ? 'Creating PDF...' : '📄 Download PDF'}
         </button>
         {report?.narrative && (
           <button className="btn btn-secondary" type="button" onClick={handleCopy}>
@@ -433,6 +613,7 @@ function toCytoscapeElements(analysis) {
       label: node.label,
       color: colorForType(node.type),
       type: node.type,
+      deep_scanned: node.data?.deep_scanned || false,
     },
   }))
   const edges = (analysis.edges || []).map((edge) => ({

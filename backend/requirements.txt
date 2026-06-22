@@ -4,4 +4,4 @@ requests
 python-whois
 google-genai
 python-dotenv
-beautifulsoup4
+reportlab

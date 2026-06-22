@@ -60,6 +60,29 @@
   --toggle-knob: #fff;
   --toggle-icon: #f59e0b;
 
+  /* Source progress */
+  --progress-bg: #f5f5f5;
+  --progress-border: #e0e0e0;
+  --progress-done: #2f7d32;
+  --progress-scanning: #e67e00;
+  --progress-waiting: #bbb;
+
+  /* Classification */
+  --cls-bg: #f8f6ff;
+  --cls-border: #d8d0f0;
+  --cls-bar-bg: #e8e8e8;
+  --cls-bar-fill: #6c5ce7;
+
+  /* Deep scan */
+  --deep-scan-bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --deep-scan-text: #fff;
+  --deep-scan-hover: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%);
+
+  /* PDF button */
+  --pdf-bg: #d84315;
+  --pdf-text: #fff;
+  --pdf-hover: #bf360c;
+
   /* Transitions */
   --theme-transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
@@ -118,6 +141,29 @@
   --toggle-bg: #3f3f46;
   --toggle-knob: #e4e4e7;
   --toggle-icon: #818cf8;
+
+  /* Source progress */
+  --progress-bg: #1e2028;
+  --progress-border: #3f3f46;
+  --progress-done: #4caf50;
+  --progress-scanning: #ffa726;
+  --progress-waiting: #52525b;
+
+  /* Classification */
+  --cls-bg: #1e1a2e;
+  --cls-border: #3d3460;
+  --cls-bar-bg: #27272a;
+  --cls-bar-fill: #818cf8;
+
+  /* Deep scan */
+  --deep-scan-bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --deep-scan-text: #fff;
+  --deep-scan-hover: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%);
+
+  /* PDF button */
+  --pdf-bg: #e65100;
+  --pdf-text: #fff;
+  --pdf-hover: #bf360c;
 }
 
 body {
