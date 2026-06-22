@@ -42,9 +42,8 @@ logger = logging.getLogger("app")
 # ---------------------------------------------------------------------------
 app = Flask(__name__)
 
-# CORS — restrict origins in production via env var
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "*")
-CORS(app, origins=allowed_origins.split(","))
+# CORS — allow all origins unconditionally
+CORS(app, origins="*")
 
 MAX_INPUT_LENGTH = 256
 
