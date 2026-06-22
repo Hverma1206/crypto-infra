@@ -442,11 +442,11 @@ function GraphView({ analysis, loading, theme }) {
         },
       ],
       layout: {
-        name: 'cose',
+        name: 'breadthfirst',
+        directed: true,
+        spacingFactor: 1.5,
         animate: false,
         padding: 30,
-        nodeRepulsion: 9000,
-        idealEdgeLength: 120,
       },
     })
 

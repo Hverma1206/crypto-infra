@@ -182,6 +182,9 @@ def analyze_stream():
 
     def generate():
         """Generator that yields SSE events as each source completes."""
+        # Yield 2KB of padding to bypass Vercel/Nginx proxy buffering
+        yield f": {' ' * 2048}\n\n"
+
         wallet_data = None
         crtsh_data = None
         whois_data = None
