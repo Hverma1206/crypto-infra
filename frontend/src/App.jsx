@@ -477,7 +477,7 @@ function GraphView({ analysis, loading, theme }) {
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       {loading && (
         <div className="graph-placeholder">
-          <span className="loading-text">Scanning infrastructure...</span>
+          <span className="loading-text">Scanning infrastructure...(It might take 1-2 minutes to load the graph)</span>
         </div>
       )}
       
