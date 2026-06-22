@@ -30,7 +30,7 @@ def get_certificates(domain: str) -> list:
     url = f"https://crt.sh/?q=%.{domain}&output=json"
 
     try:
-        response = requests.get(url, timeout=15)
+        response = requests.get(url, timeout=5)
         response.raise_for_status()
 
         if not response.text.strip():

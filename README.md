@@ -1,6 +1,6 @@
-# Crypto Scam Infrastructure Mapper
+# Crypto Scam Mapper
 
-An OSINT investigation tool for mapping crypto scam infrastructure from public sources. Enter a single artifact — a wallet address, domain, or token — and the tool automatically traces connections across **6 public intelligence sources**, builds an interactive relationship graph, computes a risk score, and generates an investigation report.
+An OSINT investigation tool for mapping crypto scam from public sources. Enter a single artifact — a wallet address, domain, or token — and the tool automatically traces connections across **6 public intelligence sources**, builds an interactive relationship graph, computes a risk score, and generates an investigation report.
 
 ## Architecture
 

@@ -232,7 +232,7 @@ function App() {
     <main className="app">
       <header className="header">
         <div className="header-text">
-          <h1>Crypto Scam Infrastructure Mapper</h1>
+          <h1>Crypto Scam Mapper</h1>
           <p>Investigate wallet addresses and domains using public OSINT sources.</p>
         </div>
         <div className="theme-toggle">

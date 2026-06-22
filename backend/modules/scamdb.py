@@ -20,7 +20,7 @@ def normalize_artifact(value: str) -> str:
 
 def fetch_blacklist() -> list:
     try:
-        response = requests.get(BLACKLIST_URL, timeout=15)
+        response = requests.get(BLACKLIST_URL, timeout=5)
         response.raise_for_status()
         data = response.json()
     except (requests.RequestException, ValueError):

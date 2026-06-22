@@ -264,22 +264,27 @@ def analyze_stream():
         if crtsh_data:
             domains.extend((crtsh_data.get("sibling_domains") or [])[:10])
 
-        scamdb_start = time.time()
-        scamdb_data = analyze_all_artifacts(
-            wallet=input_value if input_type == "wallet" else None,
-            domains=domains,
-            connected_wallets=(wallet_data or {}).get("connected_addresses") or [],
-        )
-        scamdb_dur = round(time.time() - scamdb_start, 2)
-        yield f"data: {json.dumps({'event': 'source_done', 'source': 'scamdb', 'duration': scamdb_dur, 'error': None})}\n\n"
+        scamdb_kwargs = {
+            "wallet": input_value if input_type == "wallet" else None,
+            "domains": domains,
+            "connected_wallets": (wallet_data or {}).get("connected_addresses") or [],
+        }
+        web_kwargs = {
+            "wallet": input_value if input_type == "wallet" else None,
+            "domain": domain or None,
+        }
 
-        web_start = time.time()
-        web_data = analyze_web_presence(
-            wallet=input_value if input_type == "wallet" else None,
-            domain=domain or None,
-        )
-        web_dur = round(time.time() - web_start, 2)
-        yield f"data: {json.dumps({'event': 'source_done', 'source': 'web_mentions', 'duration': web_dur, 'error': None})}\n\n"
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future_scamdb = executor.submit(run_source, "scamdb", analyze_all_artifacts, **scamdb_kwargs)
+            future_web = executor.submit(run_source, "web_mentions", analyze_web_presence, **web_kwargs)
+
+            for future in as_completed([future_scamdb, future_web]):
+                name, data, duration, error = future.result()
+                if name == "scamdb":
+                    scamdb_data = data
+                elif name == "web_mentions":
+                    web_data = data
+                yield f"data: {json.dumps({'event': 'source_done', 'source': name, 'duration': duration, 'error': error})}\n\n"
 
         # Build graph
         result = build_graph(

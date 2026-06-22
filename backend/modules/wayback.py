@@ -27,7 +27,7 @@ def check_availability(domain: str) -> dict:
         return {"available": False, "url": None, "timestamp": None, "date": None}
 
     try:
-        response = requests.get(AVAILABLE_URL, params={"url": domain}, timeout=10)
+        response = requests.get(AVAILABLE_URL, params={"url": domain}, timeout=5)
         response.raise_for_status()
         archived = response.json().get("archived_snapshots", {}).get("closest", {})
     except requests.RequestException as exc:
@@ -58,7 +58,7 @@ def get_snapshots(domain: str, limit: int = 20) -> list:
     }
 
     try:
-        response = requests.get(f"{CDX_URL}/search/cdx", params=params, timeout=15)
+        response = requests.get(f"{CDX_URL}/search/cdx", params=params, timeout=5)
         response.raise_for_status()
         rows = response.json()
     except (requests.RequestException, ValueError):
